@@ -1,0 +1,2 @@
+[2023-09-09 18:54:52] main.INFO: *** Starting scheduler worker a576c21f9b18:557:_schdlr_ {"type":"start","worker":"a576c21f9b18:557","queues":["_schdlr_"]} []
+[2023-09-09 18:54:52] main.INFO: Starting worker a576c21f9b18:557:_schdlr_ {"type":"start","worker":"a576c21f9b18:557:_schdlr_"} []

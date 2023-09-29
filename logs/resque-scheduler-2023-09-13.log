@@ -1,0 +1,6 @@
+[2023-09-13 13:16:59] main.INFO: *** Starting scheduler worker 685223c688ab:640:_schdlr_ {"type":"start","worker":"685223c688ab:640","queues":["_schdlr_"]} []
+[2023-09-13 13:16:59] main.INFO: Starting worker 685223c688ab:640:_schdlr_ {"type":"start","worker":"685223c688ab:640:_schdlr_"} []
+[2023-09-13 13:45:02] main.INFO: *** Starting scheduler worker 33eb068a7486:561:_schdlr_ {"type":"start","worker":"33eb068a7486:561","queues":["_schdlr_"]} []
+[2023-09-13 13:45:03] main.INFO: Starting worker 33eb068a7486:561:_schdlr_ {"type":"start","worker":"33eb068a7486:561:_schdlr_"} []
+[2023-09-13 14:15:31] main.INFO: *** Starting scheduler worker 33eb068a7486:374:_schdlr_ {"type":"start","worker":"33eb068a7486:374","queues":["_schdlr_"]} []
+[2023-09-13 14:15:31] main.INFO: Starting worker 33eb068a7486:374:_schdlr_ {"type":"start","worker":"33eb068a7486:374:_schdlr_"} []

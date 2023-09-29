@@ -1,0 +1,4 @@
+[2023-09-23 18:46:49] main.INFO: *** Starting scheduler worker c7b03deb5621:352:_schdlr_ {"type":"start","worker":"c7b03deb5621:352","queues":["_schdlr_"]} []
+[2023-09-23 18:46:49] main.INFO: Starting worker c7b03deb5621:352:_schdlr_ {"type":"start","worker":"c7b03deb5621:352:_schdlr_"} []
+[2023-09-23 21:32:56] main.INFO: *** Starting scheduler worker 77ee713e2945:534:_schdlr_ {"type":"start","worker":"77ee713e2945:534","queues":["_schdlr_"]} []
+[2023-09-23 21:32:56] main.INFO: Starting worker 77ee713e2945:534:_schdlr_ {"type":"start","worker":"77ee713e2945:534:_schdlr_"} []
