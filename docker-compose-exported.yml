@@ -1,0 +1,254 @@
+name: docker-misp
+services:
+  cassandra:
+    environment:
+      CASSANDRA_CLUSTER_NAME: TheHive
+    image: cassandra:4
+    networks:
+      SOC_NET: null
+    ports:
+    - mode: ingress
+      host_ip: 0.0.0.0
+      target: 9042
+      published: "9042"
+      protocol: tcp
+    restart: unless-stopped
+    volumes:
+    - type: volume
+      source: cassandradata
+      target: /var/lib/cassandra
+      volume: {}
+  cortex.local:
+    depends_on:
+      elasticsearch:
+        condition: service_started
+        required: true
+    environment:
+      docker_job_directory: /tmp/cortex-jobs
+      job_directory: /tmp/cortex-jobs
+    image: thehiveproject/cortex:latest
+    networks:
+      SOC_NET: null
+    ports:
+    - mode: ingress
+      host_ip: 0.0.0.0
+      target: 9001
+      published: "9001"
+      protocol: tcp
+    restart: unless-stopped
+    volumes:
+    - type: bind
+      source: /var/run/docker.sock
+      target: /var/run/docker.sock
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /tmp/cortex-jobs
+      target: /tmp/cortex-jobs
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /home/oracle/docker-misp/cortex/logs
+      target: /var/log/cortex
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /home/oracle/docker-misp/cortex/application.conf
+      target: /cortex/application.conf
+      bind:
+        create_host_path: true
+  db:
+    cap_add:
+    - SYS_NICE
+    command:
+    - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_DATABASE: misp
+      MYSQL_PASSWORD: example
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_USER: misp
+    image: mysql:8.0.19
+    networks:
+      SOC_NET: null
+    restart: always
+    volumes:
+    - type: volume
+      source: mysql_data
+      target: /var/lib/mysql
+      volume: {}
+  elasticsearch:
+    environment:
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
+      cluster.name: hive
+      discovery.type: single-node
+      http.host: 0.0.0.0
+      xpack.security.enabled: "false"
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.12
+    networks:
+      SOC_NET: null
+    ports:
+    - mode: ingress
+      host_ip: 0.0.0.0
+      target: 9200
+      published: "9200"
+      protocol: tcp
+    restart: unless-stopped
+    volumes:
+    - type: volume
+      source: elasticsearchdata
+      target: /usr/share/elasticsearch/data
+      volume: {}
+  mail:
+    image: namshi/smtp
+    networks:
+      SOC_NET: null
+  minio:
+    command:
+    - minio
+    - server
+    - /data
+    - --console-address
+    - :9002
+    environment:
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: minioadmin
+    image: quay.io/minio/minio
+    networks:
+      SOC_NET: null
+    ports:
+    - mode: ingress
+      host_ip: 0.0.0.0
+      target: 9002
+      published: "9002"
+      protocol: tcp
+    restart: unless-stopped
+    volumes:
+    - type: volume
+      source: miniodata
+      target: /data
+      volume: {}
+  misp:
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    environment:
+      CRON_USER_ID: "1"
+      HOSTNAME: https://localhost
+      INIT: "true"
+      REDIS_FQDN: redis
+    image: coolacid/misp-docker:core-latest
+    networks:
+      SOC_NET: null
+    ports:
+    - mode: ingress
+      target: 80
+      published: "80"
+      protocol: tcp
+    - mode: ingress
+      target: 443
+      published: "443"
+      protocol: tcp
+    volumes:
+    - type: bind
+      source: /home/oracle/docker-misp/server-configs
+      target: /var/www/MISP/app/Config
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /home/oracle/docker-misp/logs
+      target: /var/www/MISP/app/tmp/logs
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /home/oracle/docker-misp/files
+      target: /var/www/MISP/app/files
+      bind:
+        create_host_path: true
+    - type: bind
+      source: /home/oracle/docker-misp/ssl
+      target: /etc/nginx/certs
+      bind:
+        create_host_path: true
+  misp-modules:
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    environment:
+      REDIS_BACKEND: redis
+    image: coolacid/misp-docker:modules-latest
+    networks:
+      SOC_NET: null
+  redis:
+    image: redis:5.0.6
+    networks:
+      SOC_NET: null
+  thehive:
+    command:
+    - --secret
+    - lab123456789
+    - --cql-hostnames
+    - cassandra
+    - --index-backend
+    - elasticsearch
+    - --es-hostnames
+    - elasticsearch
+    - --s3-endpoint
+    - http://minio:9002
+    - --s3-access-key
+    - minioadmin
+    - --s3-secret-key
+    - minioadmin
+    - --s3-use-path-access-style
+    depends_on:
+      cassandra:
+        condition: service_started
+        required: true
+      cortex.local:
+        condition: service_started
+        required: true
+      elasticsearch:
+        condition: service_started
+        required: true
+      minio:
+        condition: service_started
+        required: true
+    environment:
+      JVM_OPTS: '"-Xms1024M -Xmx1024M"'
+    image: strangebee/thehive:5.2
+    networks:
+      SOC_NET: null
+    ports:
+    - mode: ingress
+      host_ip: 0.0.0.0
+      target: 9000
+      published: "9000"
+      protocol: tcp
+    restart: unless-stopped
+    volumes:
+    - type: volume
+      source: thehivedata
+      target: /etc/thehive/application.conf
+      volume: {}
+networks:
+  SOC_NET:
+    name: docker-misp_SOC_NET
+    driver: bridge
+volumes:
+  cassandradata:
+    name: docker-misp_cassandradata
+  elasticsearchdata:
+    name: docker-misp_elasticsearchdata
+  miniodata:
+    name: docker-misp_miniodata
+  mysql_data:
+    name: docker-misp_mysql_data
+  thehivedata:
+    name: docker-misp_thehivedata

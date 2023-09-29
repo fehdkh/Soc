@@ -1,0 +1,186 @@
+version: '3'
+services:
+  thehive:
+    image: strangebee/thehive:5.2
+    restart: unless-stopped
+    depends_on:
+      - cassandra
+      - elasticsearch
+      - minio
+      - cortex.local
+    ports:
+      - "0.0.0.0:9000:9000"
+    environment:
+      - JVM_OPTS="-Xms1024M -Xmx1024M"
+    command:
+      - --secret
+      - "lab123456789"
+      - "--cql-hostnames"
+      - "cassandra"
+      - "--index-backend"
+      - "elasticsearch"
+      - "--es-hostnames"
+      - "elasticsearch"
+      - "--s3-endpoint"
+      - "http://minio:9002"
+      - "--s3-access-key"
+      - "minioadmin"
+      - "--s3-secret-key"
+      - "minioadmin"
+      - "--s3-use-path-access-style"
+    #If you are familiar with the previous docker compose file you will note that the Cortex ports and keys have been omitted this is because we can now
+    #complete the integration from TheHive GUI directly.
+    volumes:
+      - thehivedata:/etc/thehive/application.conf
+    networks:
+      - SOC_NET
+
+  cassandra:
+    image: 'cassandra:4'
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=TheHive
+    volumes:
+      - cassandradata:/var/lib/cassandra
+    networks:
+      - SOC_NET
+    
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.12
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - cluster.name=hive
+      - http.host=0.0.0.0
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    volumes:
+      - elasticsearchdata:/usr/share/elasticsearch/data
+    networks:
+      - SOC_NET
+
+  minio:
+    image: quay.io/minio/minio
+    restart: unless-stopped
+    command: ["minio", "server", "/data", "--console-address", ":9002"]
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "0.0.0.0:9002:9002"
+    volumes:
+      - "miniodata:/data"
+    networks:
+      - SOC_NET
+
+#appended .local onto the container name because when we integrate cortex with TheHive using the new GUI menu it only accept a FQDN.
+  cortex.local:
+    image: thehiveproject/cortex:latest
+    restart: unless-stopped
+    command: ["--analyzer-url", "/cortex/Cortex-Analyzers/analyzers", "--responder-url", "/cortex/Cortex-Analyzers/responders"]
+    environment:
+      - job_directory=/tmp/cortex-jobs
+      - docker_job_directory=/tmp/cortex-jobs
+    volumes:
+      #For analyzers and responders (called neurons, also based on docker containers) to work, we need to bind the hosts docker socket into the cortex container
+      #so it can use the docker service of the host, and share the job directory between the container and the host.
+      #An alternative way of doing this would be to run docker (neurons) within the cortex docker container (docker-ception), the container will need to be run in 
+      #privileged mode and you will need the --start-docker parameter for this work. It is however not advised to run docker containers in priviliged mode because it
+      #grants the docker container root capabilities over the host system which is a security risk. 
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/cortex-jobs:/tmp/cortex-jobs
+      - ./cortex/logs:/var/log/cortex
+      #- ./cortex/application.conf:/cortex/application.conf
+      - ./cortex/Cortex-Analyzers/analyzers:/cortex/Cortex-Analyzers/analyzers
+      - ./cortex/Cortex-Analyzers/responders:/cortex/Cortex-Analyzers/responders
+      #- ./cortex/cortex:/etc/cortex
+    depends_on:
+      - elasticsearch
+    ports:
+      - "0.0.0.0:9001:9001"
+    networks:
+      - SOC_NET
+  # This is capible to relay via gmail, Amazon SES, or generic relays
+  # See: https://hub.docker.com/r/namshi/smtp
+  mail:
+    image: namshi/smtp
+    networks:
+      - SOC_NET 
+
+  redis:
+    image: redis:5.0.6
+    networks:
+      - SOC_NET 
+
+  db:
+    image: mysql:8.0.19
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      - "MYSQL_USER=misp"
+      - "MYSQL_PASSWORD=example"
+      - "MYSQL_ROOT_PASSWORD=password"
+      - "MYSQL_DATABASE=misp"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    cap_add:
+      - SYS_NICE  # CAP_SYS_NICE Prevent runaway mysql log
+    networks:
+      - SOC_NET
+  misp:
+    image: coolacid/misp-docker:core-latest
+    depends_on:
+      - redis
+      - db
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./server-configs/:/var/www/MISP/app/Config/"
+      - "./logs/:/var/www/MISP/app/tmp/logs/"
+      - "./files/:/var/www/MISP/app/files"
+      - "./ssl/:/etc/nginx/certs"
+#      - "./examples/custom-entrypoint.sh:/custom-entrypoint.sh" # Use the example custom-entrypoint.sh
+    environment:
+      - "HOSTNAME=https://localhost"
+      - "REDIS_FQDN=redis"
+      - "INIT=true"             # Initialze MISP, things includes, attempting to import SQL and the Files DIR
+      - "CRON_USER_ID=1"        # The MISP user ID to run cron jobs as
+#      - "SYNCSERVERS=1 2 3 4"  # The MISP Feed servers to sync in the cron job
+      # Database Configuration (And their defaults)
+#      - "MYSQL_HOST=db"
+#      - "MYSQL_USER=misp"
+#      - "MYSQL_PASSWORD=example" # NOTE: This should be AlphaNum with no Special Chars. Otherwise, edit config files after first run. 
+#      - "MYSQL_DATABASE=misp"
+      # Optional Settings
+      - "NOREDIR=true" # Do not redirect port 80
+#      - "DISIPV6=true" # Disable IPV6 in nginx
+#      - "CERTAUTH=optional" # Can be set to optional or on - Step 2 of https://github.com/MISP/MISP/tree/2.4/app/Plugin/CertAuth is still required
+#      - "SECURESSL=true" # Enable higher security SSL in nginx
+#      - "MISP_MODULES_FQDN=http://misp-modules" # Set the MISP Modules FQDN, used for Enrichment_services_url/Import_services_url/Export_services_url
+#      - "WORKERS=1" #If set to a value larger than 1 this will increase the number of parallel worker processes
+    networks:
+      - SOC_NET
+  misp-modules:
+    image: coolacid/misp-docker:modules-latest
+    environment:
+      - "REDIS_BACKEND=redis"
+    depends_on:
+      - redis
+      - db
+    networks:
+      - SOC_NET
+
+volumes:
+    mysql_data:
+    miniodata:
+    cassandradata:
+    elasticsearchdata:
+    thehivedata:
+networks:
+    SOC_NET:
+          driver: bridge
